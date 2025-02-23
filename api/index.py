@@ -69,7 +69,7 @@ def extract_tables_with_ocr():
     doc.close()
 
 @app.route('/api/extract-tables', methods=['POST'])
-def extract_tables_with_gmft():
+def extract_tables():
     if 'file' not in request.files:
         return jsonify({"error": "No file provided."}), 400
 
@@ -77,32 +77,60 @@ def extract_tables_with_gmft():
     if file.filename == '':
         return jsonify({"error": "No selected file."}), 400
 
+    use_ocr = request.form.get("useOCR") == "true"
+
     with tempfile.TemporaryDirectory() as temp_dir:
         pdf_path = os.path.join(temp_dir, file.filename)
         file.save(pdf_path)
 
+        if use_ocr:
+            output_pdf_path = os.path.join(temp_dir, "ocr_" + file.filename)
+            pdf_path = preprocess_pdf_with_ocr(pdf_path, output_pdf_path) or pdf_path
+
         try:
-            tables, doc = ingest_pdf(pdf_path)
+            tables, _ = ingest_pdf(pdf_path)
             if not tables:
                 return jsonify({"message": "No tables found in the PDF."})
 
-            table_csvs = {} 
+            all_tables = []
 
-            for i, table in enumerate(tables):
+            for table in tables:
                 df = formatter.extract(table).df()
-                
-                csv_buffer = io.StringIO()
-                df.to_csv(csv_buffer, index=False)
-                table_csvs[f"table_{i+1}.csv"] = csv_buffer.getvalue()
 
-            return jsonify({
-                "success": True,
-                "tables": table_csvs
-            })
+                ordered_columns = list(df.columns)  
+                table_data = df[ordered_columns].to_dict(orient="records")  
+
+                all_tables.append({
+                    "headers": ordered_columns,  
+                    "table_data": table_data     
+                })
+
+            return jsonify({"success": True, "tables": all_tables})
 
         except Exception as e:
-            doc.close()
             return jsonify({"error": f"Failed to extract tables: {str(e)}"}), 500
+
+@app.route('/api/export-csv', methods=['POST'])
+def export_csv():
+    data = request.json
+    if not data or 'tables' not in data:
+        return jsonify({"error": "Invalid request format"}), 400
+
+    exported_files = {}
+
+    for idx, table in enumerate(data["tables"]):
+        df = pd.DataFrame(table["table_data"])
+        header_mappings = table["header_mappings"]
+
+        updated_headers = {col: header_mappings[col] if col in header_mappings and header_mappings[col] else col for col in df.columns}
+        df.rename(columns=updated_headers, inplace=True)
+
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+
+        exported_files[f"table_{idx+1}.csv"] = csv_buffer.getvalue()
+
+    return jsonify({"csv_files": exported_files})
 
 
 if __name__ == '__main__':
