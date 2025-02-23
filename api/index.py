@@ -1,5 +1,8 @@
 import subprocess
-from flask import Flask, request, jsonify
+import zipfile
+import io
+import pandas as pd
+from flask import Flask, request, jsonify, send_file, url_for
 import pandas as pd
 from gmft.pdf_bindings import PyPDFium2Document
 from gmft.auto import AutoTableDetector, AutoTableFormatter
@@ -80,19 +83,26 @@ def extract_tables_with_gmft():
 
         try:
             tables, doc = ingest_pdf(pdf_path)
-
-            if tables:
-                ft = formatter.extract(tables[0])
-                df = ft.df() 
-                json_data = df[df.columns.tolist()].to_dict(orient="records")
-
-                return jsonify({"tables": json_data})
-            else:
+            if not tables:
                 return jsonify({"message": "No tables found in the PDF."})
+
+            table_csvs = {} 
+
+            for i, table in enumerate(tables):
+                df = formatter.extract(table).df()
+                
+                csv_buffer = io.StringIO()
+                df.to_csv(csv_buffer, index=False)
+                table_csvs[f"table_{i+1}.csv"] = csv_buffer.getvalue()
+
+            return jsonify({
+                "success": True,
+                "tables": table_csvs
+            })
+
         except Exception as e:
+            doc.close()
             return jsonify({"error": f"Failed to extract tables: {str(e)}"}), 500
-    
-    doc.close()
 
 
 if __name__ == '__main__':

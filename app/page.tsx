@@ -43,24 +43,26 @@ export default function FileUpload() {
   
       const jsonResponse = await response.json();
       console.log(jsonResponse);
-  
-      if (!jsonResponse.tables || jsonResponse.tables.length === 0) {
-        alert('No tables found to export.');
+      if (!jsonResponse.success) {
+        console.error(jsonResponse.error || 'Unknown error');
+        alert(jsonResponse.message || 'Failed to extract tables.');
         return;
       }
-  
-      const keys = Object.keys(jsonResponse.tables[0]); 
+      
+      Object.entries(jsonResponse.tables).forEach(([filename, csvData]) => {
+        const blob = new Blob([csvData], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+      
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      
+        console.log(`Downloaded ${filename}`);
+      });
 
-      const csvRows = [
-        keys.join(','), 
-        ...jsonResponse.tables.map(row => keys.map(k => row[k]).join(',')) 
-      ].join('\n');
-
-      const blob = new Blob([csvRows], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-  
-      setCsvUrl(url);
-      console.log('CSV successfully fetched and URL created:', url);
       setIsUploaded(true)
     } catch (error) {
       console.error('Error uploading file:', error.message);
