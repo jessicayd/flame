@@ -56,7 +56,6 @@ export default function FileUpload() {
       }
 
       setTables(jsonResponse.tables);
-      console.log("Extracted Tables:", jsonResponse.tables);
 
       // Initialize mappings for each table
       setMappings(
